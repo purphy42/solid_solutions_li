@@ -1,0 +1,103 @@
+feature,importance_mdi,importance_perm_mean,importance_perm_std,significant
+endmember_spacegroup_number,0.16244593026225432,0.18220108835459073,0.03332611735992017,True
+endmember_density,0.15777809514809202,0.1380812140147825,0.025099446582198537,True
+endmember_energy_per_atom,0.15280580532587626,0.13657480817937417,0.020686537785857793,True
+endmember_volume,0.16791139771276328,0.12219708171338291,0.017468920667252,True
+endmember_fraction,0.03458704324212567,0.04082864233856505,0.012796155566975049,True
+mp_is_stable,0.032194530427458734,0.021654810330914785,0.007402367833258343,True
+MagpieData minimum NUnfilled,0.01674061639018712,0.008058852760480678,0.002689183958770294,True
+endmember_is_stable,0.01016911476216401,0.0077129711920196605,0.00457228866047076,True
+MagpieData maximum MendeleevNumber,0.016365654951762038,0.0073202475024032624,0.002626186342124394,True
+vpa,0.016057061197278313,0.007091214428953899,0.002249820035786018,True
+MagpieData maximum Electronegativity,0.015575783418735004,0.006848257731269239,0.002400299404386548,True
+endmember_energy_above_hull,0.012384568468432241,0.006436223164268617,0.003355487816335182,True
+MagpieData mode GSvolume_pa,0.013954597487174182,0.006008451081148192,0.002099452483390732,True
+packing fraction,0.01526319704874548,0.005993122928217742,0.0022997731957651365,True
+MagpieData mean CovalentRadius,0.01374174496223825,0.005784109607221621,0.002364640914550975,True
+density,0.013163153165296575,0.005748146412478253,0.002089088957404853,True
+MagpieData maximum NValence,0.013773058143672306,0.005628548986251605,0.0019182964613872252,True
+delta_r_vs_Li_pm,0.012907005411515465,0.004972423865474304,0.0020814145488190507,True
+mp_n_candidates,0.0124483469367509,0.004900553495460128,0.0019637265273520334,True
+MagpieData mean MeltingT,0.010906892287537188,0.004787646238769769,0.0020059642407090276,True
+MagpieData mode AtomicWeight,0.010904920345727969,0.004722122149528091,0.0015926989726378546,True
+MagpieData mode SpaceGroupNumber,0.009787734320477507,0.004281514108636852,0.002263659433466792,True
+MagpieData minimum Column,0.012515142044586059,0.004024748640586867,0.0017526302582057977,True
+mp_n_experimental,0.00966329767641552,0.00401995523965489,0.0017515283459449919,True
+crystal_system_int,0.006439013336807997,0.003291979667366454,0.0020363702595215805,True
+delta_valency_vs_Li,0.007941501964830507,0.002903210797532385,0.0018286433508090134,True
+spacegroup_num,0.006163063064886852,0.002675652321363256,0.0015564014053961112,True
+n_symmetry_ops,0.0055215099185167964,0.002641749530521001,0.0017205259903468448,True
+MagpieData mean NpUnfilled,0.0038696592525566654,0.0024061460439551265,0.0017992252277960659,True
+MagpieData mean NpValence,0.005558822051223017,0.0020983895438837414,0.0017561492819010579,True
+MagpieData minimum Row,0.0052701863811247494,0.002079907159441882,0.000890177069327121,True
+MagpieData maximum NsValence,0.0038600755086993965,0.0013109390496639228,0.000946625134284108,True
+MagpieData mean NsUnfilled,0.0021199535410882805,0.0009432570963150394,0.0005503667183967345,True
+mp_hull_unstable,0.002636860128427898,0.0008861301271564537,0.0005887802285883712,True
+MagpieData minimum NfValence,0.0017547112517210136,0.0008584715919679242,0.0006594435501373346,True
+mp_n_near_hull,0.0022537069091138635,0.0007108863831858409,0.0005544155215155564,True
+mp_energy_above_hull,0.0011860429877446248,0.0004363028021497767,0.0002846595787536359,True
+MagpieData maximum NdValence,0.0007560961893902322,0.00019886160460483028,0.0002051019168207528,False
+MagpieData maximum NdUnfilled,0.00041108788408972507,8.650677732449652e-05,8.688645347660525e-05,False
+mp_material_id_forced,0.00018694364829455846,6.249469666474716e-05,6.452183429108756e-05,False
+MagpieData minimum GSbandgap,2.607484421738115e-05,4.0051355009729226e-07,1.5356988155831178e-05,False
+MagpieData avg_dev NfValence,0.0,0.0,0.0,False
+MagpieData avg_dev AtomicWeight,0.0,0.0,0.0,False
+MagpieData mean GSmagmom,0.0,0.0,0.0,False
+MagpieData range CovalentRadius,0.0,0.0,0.0,False
+MagpieData mode GSmagmom,0.0,0.0,0.0,False
+MagpieData avg_dev GSmagmom,0.0,0.0,0.0,False
+MagpieData range GSmagmom,0.0,0.0,0.0,False
+MagpieData avg_dev GSbandgap,0.0,0.0,0.0,False
+MagpieData maximum GSmagmom,0.0,0.0,0.0,False
+endmember_n_experimental,0.0,0.0,0.0,False
+endmember_n_near_hull,0.0,0.0,0.0,False
+MagpieData minimum GSmagmom,0.0,0.0,0.0,False
+MagpieData range SpaceGroupNumber,0.0,0.0,0.0,False
+endmember_e_hull_max_eV_per_atom,0.0,0.0,0.0,False
+is_centrosymmetric,0.0,0.0,0.0,False
+MagpieData range Number,0.0,0.0,0.0,False
+mp_is_theoretical_fallback,0.0,0.0,0.0,False
+MagpieData avg_dev Row,0.0,0.0,0.0,False
+MagpieData range MeltingT,0.0,0.0,0.0,False
+endmember_is_theoretical_fallback,0.0,0.0,0.0,False
+MagpieData avg_dev Column,0.0,0.0,0.0,False
+MagpieData avg_dev SpaceGroupNumber,0.0,0.0,0.0,False
+MagpieData range NpUnfilled,0.0,0.0,0.0,False
+MagpieData range AtomicWeight,0.0,0.0,0.0,False
+endmember_theoretical,0.0,0.0,0.0,False
+MagpieData minimum NfUnfilled,0.0,0.0,0.0,False
+MagpieData range Column,0.0,0.0,0.0,False
+MagpieData range Row,0.0,0.0,0.0,False
+mp_theoretical,0.0,0.0,0.0,False
+MagpieData range NsUnfilled,0.0,0.0,0.0,False
+MagpieData avg_dev CovalentRadius,0.0,0.0,0.0,False
+MagpieData range NUnfilled,0.0,0.0,0.0,False
+MagpieData avg_dev MendeleevNumber,0.0,0.0,0.0,False
+MagpieData range NdUnfilled,0.0,0.0,0.0,False
+MagpieData avg_dev NdUnfilled,0.0,0.0,0.0,False
+MagpieData range NdValence,0.0,0.0,0.0,False
+MagpieData range NfValence,0.0,0.0,0.0,False
+MagpieData avg_dev NdValence,0.0,0.0,0.0,False
+MagpieData maximum NfUnfilled,0.0,0.0,0.0,False
+MagpieData range NfUnfilled,0.0,0.0,0.0,False
+MagpieData mean NfUnfilled,0.0,0.0,0.0,False
+MagpieData mode NfUnfilled,0.0,0.0,0.0,False
+MagpieData avg_dev GSvolume_pa,0.0,0.0,0.0,False
+MagpieData range MendeleevNumber,0.0,0.0,0.0,False
+MagpieData range NpValence,0.0,0.0,0.0,False
+MagpieData avg_dev NValence,0.0,0.0,0.0,False
+MagpieData avg_dev NUnfilled,0.0,0.0,0.0,False
+MagpieData range NsValence,0.0,0.0,0.0,False
+MagpieData avg_dev Electronegativity,0.0,0.0,0.0,False
+MagpieData range GSvolume_pa,0.0,0.0,0.0,False
+endmember_material_id_forced,0.0,0.0,0.0,False
+MagpieData range NValence,0.0,0.0,0.0,False
+MagpieData avg_dev NpUnfilled,0.0,0.0,0.0,False
+MagpieData avg_dev NpValence,0.0,0.0,0.0,False
+MagpieData avg_dev Number,0.0,0.0,0.0,False
+endmember_n_candidates,0.0,-2.7755575615628915e-18,1.7333351416399796e-17,False
+MagpieData avg_dev NfUnfilled,0.0,-2.7755575615628915e-18,1.7333351416399796e-17,False
+MagpieData avg_dev NsValence,0.0,-2.7755575615628915e-18,1.7333351416399796e-17,False
+MagpieData range Electronegativity,0.0,-2.7755575615628915e-18,1.7333351416399796e-17,False
+MagpieData avg_dev NsUnfilled,0.0,-2.7755575615628915e-18,1.7333351416399796e-17,False
+MagpieData range GSbandgap,0.0,-5.551115123125783e-18,2.419674984566563e-17,False
