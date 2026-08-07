@@ -1,14 +1,17 @@
-numpy
-pandas
-scikit-learn
-matplotlib
-seaborn
-scipy
-mp-api
-pymatgen
-matminer
-ase
-xgboost
-catboost
-ipython
-jupyter
+# Python >= 3.7
+# Generated with version numbers (--versions flag)
+
+anndata
+ase==3.29.0
+catboost==1.2.10
+ipython==9.16.1
+matminer==0.10.1
+matplotlib==3.11.1
+mp-api==0.46.4
+numpy==2.5.1
+pandas==3.0.5
+pymatgen==2026.5.4
+scikit-learn==1.9.0
+scipy==1.18.0
+seaborn==0.13.2
+xgboost==3.4.0
