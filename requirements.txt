@@ -1,7 +1,5 @@
 # Python >= 3.7
-# Generated with version numbers (--versions flag)
 
-anndata
 ase==3.29.0
 catboost==1.2.10
 ipython==9.16.1

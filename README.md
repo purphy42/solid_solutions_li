@@ -16,7 +16,7 @@ Energy CSVs live under `data/`:
 - `vac_binding_energy_pre.csv` / `vac_binding_energy_opt.csv`
 - `vac_solution_energy_pre.csv` / `vac_solution_energy_opt.csv`
 
-Figures and importance tables are tagged the same way (`*_pre` / `*_opt`). Trained figure sets are also archived under `figures/pre_trained/` and `figures/opt_trained/`.
+Figures and importance tables are tagged the same way (`*_pre` / `*_opt`). ML figures go to `figures/ml_pre_trained/` or `figures/ml_opt_trained/`; Hume–Rothery figures go to `figures/h_r_rules/`.
 
 ## Workflow
 
@@ -40,7 +40,10 @@ Default hold-out: train on the full `_pre` pool plus remaining `_opt` dopants; *
 ├── solution_thermo.py         # chemical potentials / thermo features
 ├── solution_features_best.py  # pinned E_s feature list
 ├── data/                      # CSVs (energies, features, metrics)
-└── figures/                   # PDF plots
+└── figures/
+    ├── h_r_rules/             # Hume–Rothery rule plots
+    ├── ml_pre_trained/        # ML figures for `_pre` / pre-train runs
+    └── ml_opt_trained/        # ML figures for `_opt` / opt-only runs
 ```
 
 ## Setup

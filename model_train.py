@@ -3,9 +3,6 @@
 
 """Train and tune regressors for vacancy binding, solution, and effective energies."""
 
-
-# In[ ]:
-
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -52,33 +49,13 @@ from xgboost import XGBRegressor
 plt.rcParams.update({'figure.dpi': 120, 'font.size': 10})
 sns.set_theme(style='white')
 
-
-
-
-# In[ ]:
-
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
 pd.set_option('display.width', 1000)
 
-
-
-# In[ ]:
-
 np.set_printoptions(precision=5)
 
-
-
-# In[ ]:
-
 plt.rcParams['figure.dpi'] = 450
-
-
-
-# In[ ]:
-
-# In[ ]:
-
 
 _candidates = []
 try:
@@ -91,8 +68,6 @@ if not (ML_DIR / 'data' / 'vac_solution_energy_opt.csv').is_file() and (ML_DIR /
     ML_DIR = ML_DIR / 'ml_part'
 REPO_ROOT = ML_DIR.parent if ML_DIR.name == 'ml_part' else ML_DIR
 DATA_DIR = ML_DIR / 'data'
-FIGURES_DIR = ML_DIR / 'figures'
-FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 print(f'ML_DIR={ML_DIR}')
 print(f'DATA_DIR={DATA_DIR}')
 
@@ -103,14 +78,18 @@ print(f'opt merge: {len(merged_opt)} rows (reference _opt set)')
 
 RANDOM_STATE = 42
 OPT_HOLDOUT_TARGETS = {'binding', 'solution', 'solution_minus_binding'}
-# Hold-out: test from _opt only; train = remaining opt + all pre-only dopants.
 HOLDOUT_TEST_FRACTION = 0.2
 HOLDOUT_N_TEST = None
-# If True: train/test on _opt only for that target (no pre-only rows).
-EB_OPT_ONLY = False
-ES_OPT_ONLY = False
-ES_MINUS_EB_OPT_ONLY = False
+EB_OPT_ONLY = True
+ES_OPT_ONLY = True
+ES_MINUS_EB_OPT_ONLY = True
 
+RUN_OPT_ONLY = EB_OPT_ONLY and ES_OPT_ONLY and ES_MINUS_EB_OPT_ONLY
+RUN_TAG = 'opt' if RUN_OPT_ONLY else 'pre'
+FIGURES_DIR = ML_DIR / 'figures' / ('ml_opt_trained' if RUN_OPT_ONLY else 'ml_pre_trained')
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+print(f'RUN_TAG={RUN_TAG}')
+print(f'FIGURES_DIR={FIGURES_DIR}')
 
 def use_opt_only_for(target_key: str) -> bool:
     return {
@@ -131,7 +110,7 @@ opt_elements = set(merged_opt['element'].astype(str))
 merged_opt_holdout_train = merged_holdout_train[
     merged_holdout_train['element'].astype(str).isin(opt_elements)
 ].copy()
-merged_opt_holdout_test = merged_holdout_test.copy()  # already opt-only
+merged_opt_holdout_test = merged_holdout_test.copy()
 
 TARGETS = {
     'binding': 'vac_binding_energy_eV',
@@ -185,30 +164,22 @@ print(
 print(f'hold-out train dopants: {sorted(merged_holdout_train["element"].astype(str).tolist())}')
 print(f'hold-out test dopants (opt-only): {sorted(merged_holdout_test["element"].astype(str).tolist())}')
 
-
-
-
-# In[ ]:
-
-# Feature selection: True = permutation importance on train split; False = load CSV from feature_importance.ipynb.
 FEATURE_IMPORTANCE_ON_TRAIN_ONLY = False
-FEATURE_IMPORTANCE_POOL = 'pre'  # 'opt' | 'pre' | 'train'
+FEATURE_IMPORTANCE_POOL = 'opt'  # 'opt' | 'pre' | 'train'
 IMPORTANCE_THRESHOLD = 1e-3
 REQUIRE_PERM_GT_STD = True
 MIN_FEATURES = 5
 MAX_FEATURES = 50
-TOP_N_FEATURES = 35  # None = all significant up to MAX_FEATURES
+TOP_N_FEATURES = 25
 CORR_DEDUP_THRESHOLD = 0.99
 PERM_N_ESTIMATORS = 500
-PERM_N_REPEATS = 20
-
+PERM_N_REPEATS = 25
 
 def mark_significant(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     if 'significant' not in out.columns:
         out['significant'] = out['importance_perm_mean'] > out['importance_perm_std']
     return out
-
 
 def select_significant_features(
     importance_df: pd.DataFrame,
@@ -243,7 +214,6 @@ def select_significant_features(
     cap = top_n if top_n is not None and top_n > 0 else MAX_FEATURES
     return feats[:cap], n_significant
 
-
 def usable_feature_cols(X: pd.DataFrame, cols: list[str]) -> list[str]:
     usable = []
     for col in cols:
@@ -252,7 +222,6 @@ def usable_feature_cols(X: pd.DataFrame, cols: list[str]) -> list[str]:
         if pd.to_numeric(X[col], errors='coerce').notna().any():
             usable.append(col)
     return usable
-
 
 def compute_feature_importance_train(
     X: pd.DataFrame,
@@ -297,12 +266,10 @@ def compute_feature_importance_train(
     df = mark_significant(df).sort_values('importance_perm_mean', ascending=False).reset_index(drop=True)
     return df, cv_r2
 
-
 def train_frame_for_target(target_key: str) -> pd.DataFrame:
     if target_key in OPT_HOLDOUT_TARGETS:
         return merged_opt_holdout_train if use_opt_only_for(target_key) else merged_holdout_train
     return merged_opt
-
 
 features_by_target = {}
 importance_by_target = {}
@@ -338,13 +305,14 @@ for target_key, target_col in TARGETS.items():
         )
     else:
         tagged = DATA_DIR / f'{target_key}_feature_importance_{FEATURE_IMPORTANCE_POOL}.csv'
-        legacy = DATA_DIR / f'{target_key}_feature_importance.csv'
-        path = tagged if tagged.is_file() else legacy
+        path = tagged
+        if not path.is_file():
+            untagged = DATA_DIR / f'{target_key}_feature_importance.csv'
+            path = untagged if untagged.is_file() else tagged
         if not path.is_file():
             raise FileNotFoundError(
-                f'{tagged} (or legacy {legacy}) missing. Run feature_importance.ipynb '
-                f'(OPT_ONLY matching FEATURE_IMPORTANCE_POOL={FEATURE_IMPORTANCE_POOL!r}) '
-                f'or set FEATURE_IMPORTANCE_ON_TRAIN_ONLY = False.'
+                f'{tagged} missing. Run feature_importance.ipynb '
+                f'with OPT_ONLY matching FEATURE_IMPORTANCE_POOL={FEATURE_IMPORTANCE_POOL!r}.'
             )
         imp_df = pd.read_csv(path)
         importance_by_target[target_key] = imp_df
@@ -355,28 +323,6 @@ for target_key, target_col in TARGETS.items():
             f"{len(feats)} features ({top_note}, n_significant={n_sig}, "
             f"importance rows={len(imp_df)}) <- {path}"
         )
-
-
-
-
-# In[ ]:
-
-# In[ ]:
-
-
-
-
-
-# ## Regularization and model selection
-# 
-# All models use median imputation + `StandardScaler`. Set `HYPERPARAM_SEARCH` (`'random'` / `'grid'`), `SELECT_BEST_BY` (`'cv'` / `'test'`), and `BEST_MODEL_CRITERION`. Both train-CV and holdout metrics are stored.
-# 
-
-
-# In[ ]:
-
-# In[ ]:
-
 
 RANDOM_STATE = 42
 N_SPLITS = 5
@@ -407,7 +353,6 @@ SVR_C = np.logspace(-2, 1, 10).tolist()
 SVR_GAMMA = ['scale', 'auto'] + np.logspace(-4, 0, 6).tolist()
 SVR_EPSILON = np.logspace(-3, -1, 6).tolist()
 
-
 def svr_param_grid() -> list[dict]:
     """Kernel-specific grids (avoid invalid Cartesian products)."""
     return [
@@ -432,7 +377,6 @@ def svr_param_grid() -> list[dict]:
         },
     ]
 
-
 def _grid_size(param_grid) -> int:
     if isinstance(param_grid, list):
         return sum(_grid_size(pg) for pg in param_grid)
@@ -440,7 +384,6 @@ def _grid_size(param_grid) -> int:
     for values in param_grid.values():
         size *= len(values)
     return size
-
 
 def build_model_specs():
     specs = {
@@ -534,8 +477,8 @@ def build_model_specs():
                     random_state=RANDOM_STATE,
                     verbose=0,
                     allow_writing_files=False,
-                    thread_count=1,  # search uses n_jobs=-1; avoid thread oversubscription
-                    bootstrap_type='Bernoulli',  # required when tuning subsample (< 1)
+                    thread_count=1,
+                    bootstrap_type='Bernoulli',
                 )),
             ]),
             'param_grid': {
@@ -552,7 +495,6 @@ def build_model_specs():
         spec['n_grid'] = _grid_size(spec['param_grid'])
     return specs
 
-
 def compute_metrics(y_true, y_pred) -> dict[str, float]:
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
@@ -563,7 +505,6 @@ def compute_metrics(y_true, y_pred) -> dict[str, float]:
         'RMSE': float(np.sqrt(mean_squared_error(y_true, y_pred))),
     }
 
-
 def effective_es_minus_eb(e_s, e_b) -> float:
     """Piecewise E_eff used in best_candidates: E_s - E_b if E_s > 0, else -E_b."""
     e_s = float(e_s)
@@ -572,7 +513,6 @@ def effective_es_minus_eb(e_s, e_b) -> float:
         return e_s - e_b
     return -e_b
 
-
 def metrics_from_results_row(row: pd.Series, split: str) -> dict[str, float]:
     return {
         'R2': float(row[f'{split}_R2']),
@@ -580,7 +520,6 @@ def metrics_from_results_row(row: pd.Series, split: str) -> dict[str, float]:
         'MAE': float(row[f'{split}_MAE']),
         'RMSE': float(row[f'{split}_RMSE']),
     }
-
 
 def select_best_row(
     subset: pd.DataFrame,
@@ -599,15 +538,12 @@ def select_best_row(
         return subset.loc[subset[col].idxmax()]
     return subset.loc[subset[col].idxmin()]
 
-
-
 SCORERS = {
     'R2': 'r2',
     'neg_MaxAE': 'neg_max_error',
     'neg_MAE': 'neg_mean_absolute_error',
     'neg_RMSE': 'neg_root_mean_squared_error',
 }
-
 
 def cv_metrics_from_scores(scores: dict) -> dict[str, float]:
     return {
@@ -617,13 +553,12 @@ def cv_metrics_from_scores(scores: dict) -> dict[str, float]:
         'RMSE': float(-np.mean(scores['test_neg_RMSE'])),
     }
 
-
 EV_TO_MEV = 1000
 PLOT_SHOW_GRID = False
 PLOT_SHOW_TITLES = False
 PLOT_SHOW_GRID_ALL_MODELS = True
 PLOT_SHOW_TITLES_ALL_MODELS = True
-PLOT_SHOW_TEST_INSET = True
+PLOT_SHOW_TEST_INSET = False
 PLOT_TEST_INSET_TARGETS = ('solution', 'solution_minus_binding')
 PLOT_INSET_PAD = 0.15
 PLOT_INSET_BOUNDS = (0.11, 0.58, 0.40, 0.40)
@@ -640,16 +575,13 @@ TICK_WIDTH = 1.0
 
 sns.set_theme(style='white')
 
-
 def rmse_to_meV(rmse_ev: float) -> float:
     return float(rmse_ev) * EV_TO_MEV
-
 
 def format_metric_for_plot(metric: str, value: float) -> str:
     if metric == 'R2':
         return f'{value:.4f}'
     return f'{value * EV_TO_MEV:.1f} meV'
-
 
 def annotate_train_test_metric(
     ax,
@@ -671,7 +603,6 @@ def annotate_train_test_metric(
         zorder=5,
     )
 
-
 def will_show_test_inset(target_key: str | None = None) -> bool:
     if not PLOT_SHOW_TEST_INSET:
         return False
@@ -679,12 +610,10 @@ def will_show_test_inset(target_key: str | None = None) -> bool:
         return False
     return target_key in PLOT_TEST_INSET_TARGETS
 
-
 def apply_axes_grid(ax, show_grid: bool) -> None:
     """Apply grid consistently on main axes and insets."""
     ax.grid(bool(show_grid), which='major', axis='both')
     ax.set_axisbelow(True)
-
 
 def add_train_test_legend(ax, *, loc: str = 'upper left') -> None:
     leg = ax.legend(
@@ -702,7 +631,6 @@ def add_train_test_legend(ax, *, loc: str = 'upper left') -> None:
     frame.set_edgecolor(PLOT_LEGEND_EDGECOLOR)
     frame.set_linewidth(1.0)
     frame.set_boxstyle('round', pad=0.1, rounding_size=0.4)
-
 
 def style_parity_axes(
     ax,
@@ -743,7 +671,6 @@ def style_parity_axes(
         spine.set_color(PLOT_SPINE_COLOR)
         spine.set_linewidth(1.0)
 
-
 def scatter_train_test(ax, y_train_pred, y_train_true, y_test_pred, y_test_true, *, s=55) -> None:
     ax.scatter(
         y_train_pred,
@@ -768,7 +695,6 @@ def scatter_train_test(ax, y_train_pred, y_train_true, y_test_pred, y_test_true,
         zorder=4,
     )
 
-
 def _test_zoom_limits(y_test_pred, y_test_true, *, pad_frac: float = PLOT_INSET_PAD):
     x = np.asarray(y_test_pred, dtype=float)
     y = np.asarray(y_test_true, dtype=float)
@@ -777,7 +703,6 @@ def _test_zoom_limits(y_test_pred, y_test_true, *, pad_frac: float = PLOT_INSET_
     span = hi - lo if hi > lo else 1.0
     pad = pad_frac * span
     return (lo - pad, hi + pad)
-
 
 def add_test_region_inset(
     ax,
@@ -836,24 +761,14 @@ def add_test_region_inset(
     conn2.set_linestyle('--')
     return axins
 
-
-
-
-# In[ ]:
-
-# In[ ]:
-
-
 model_specs = build_model_specs()
 print('Grid sizes (combinations per model):')
 for name, spec in model_specs.items():
     print(f'  {name:18} {spec["n_grid"]:4d}')
 print(f'  total per target   {sum(s["n_grid"] for s in model_specs.values())}')
 
-
 def features_in_df(df: pd.DataFrame, feature_cols: list[str]) -> list[str]:
     return [f for f in feature_cols if f in df.columns]
-
 
 def get_xy(df: pd.DataFrame, target_col: str, feature_cols: list[str]):
     if df.empty:
@@ -874,7 +789,6 @@ def get_xy(df: pd.DataFrame, target_col: str, feature_cols: list[str]):
     elements = work['element'].astype(str).values
     return X, y, elements
 
-
 def cv_for_n(n_samples: int, *, max_splits: int = N_SPLITS) -> KFold:
     if n_samples < 2:
         raise ValueError(
@@ -884,7 +798,6 @@ def cv_for_n(n_samples: int, *, max_splits: int = N_SPLITS) -> KFold:
     n_splits = min(max_splits, n_samples)
     return KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE)
 
-
 def catboost_subsample_grid(n_train: int, n_splits: int) -> list[float]:
     """Bernoulli subsample needs enough units in each CV training fold."""
     n_fold_train = max(1, int(np.floor(n_train * (n_splits - 1) / n_splits)))
@@ -892,13 +805,11 @@ def catboost_subsample_grid(n_train: int, n_splits: int) -> list[float]:
     safe = [s for s in candidates if s * n_fold_train >= 5]
     return safe if safe else [1.0]
 
-
 def _clip_leaf_grid(values, *, n_train: int) -> list:
     """Keep leaf sizes that still allow splits on small training sets."""
     max_leaf = max(1, n_train // 4)
     clipped = [int(v) for v in values if int(v) <= max_leaf]
     return clipped if clipped else [1]
-
 
 def param_grid_for_model(model_name: str, param_grid, *, n_train: int, n_splits: int):
     grid = param_grid
@@ -917,7 +828,6 @@ def param_grid_for_model(model_name: str, param_grid, *, n_train: int, n_splits:
     if leaf_key and isinstance(grid, dict) and leaf_key in grid:
         grid = {**grid, leaf_key: _clip_leaf_grid(grid[leaf_key], n_train=n_train)}
     return grid
-
 
 def pack_predictions(*, holdout: bool, y_train, y_train_pred, y_test, y_test_pred, train_elements, test_elements):
     if holdout:
@@ -938,9 +848,7 @@ def pack_predictions(*, holdout: bool, y_train, y_train_pred, y_test, y_test_pre
         'elements': train_elements,
     }
 
-
 results_rows = []
-
 
 best_models = {}
 predictions = {}
@@ -1100,9 +1008,8 @@ for target_key, target_col in TARGETS.items():
             f"MAE={test_metrics['MAE']:.4f}, RMSE={rmse_to_meV(test_metrics['RMSE']):.1f} meV"
         )
 
-
 results_df = pd.DataFrame(results_rows)
-results_path = DATA_DIR / 'model_train_results.csv'
+results_path = DATA_DIR / f'model_train_results_{RUN_TAG}.csv'
 results_df.to_csv(results_path, index=False)
 print(f'\nSaved summary to {results_path}')
 
@@ -1114,7 +1021,7 @@ METRIC_COLS = [
 ]
 for target_key in TARGETS:
     per_target = results_df.loc[results_df['target_key'] == target_key, METRIC_COLS].copy()
-    out = DATA_DIR / f'model_metrics_{target_key}.csv'
+    out = DATA_DIR / f'model_metrics_{target_key}_{RUN_TAG}.csv'
     per_target.to_csv(out, index=False)
     print(f'Saved {out}')
 
@@ -1131,21 +1038,6 @@ for target_key in TARGETS:
         f"({_sel_prefix}_{BEST_MODEL_CRITERION}={best[f'{_sel_prefix}_{BEST_MODEL_CRITERION}']:.4f}, "
         f"test_{BEST_MODEL_CRITERION}={best[f'test_{BEST_MODEL_CRITERION}']:.4f})"
     )
-
-
-
-
-# In[ ]:
-
-# In[11]:
-
-
-
-
-# In[ ]:
-
-# In[ ]:
-
 
 summary_df = results_df.copy()
 summary_df['train_RMSE_meV'] = summary_df['train_RMSE'].map(rmse_to_meV)
@@ -1165,13 +1057,6 @@ display(
     )[display_cols]
 )
 
-
-
-# In[ ]:
-
-# In[ ]:
-
-
 print('Best parameters per target and model:\n')
 for target_key in TARGETS:
     print(f"{TARGET_LABELS[target_key]}:")
@@ -1183,16 +1068,11 @@ for target_key in TARGETS:
         print(f"  {model_name}: {tuned}")
     print()
 
-
-
-# In[ ]:
-
 def _scatter_limits(y_true, y_train, y_test):
     lo = float(min(y_true.min(), y_train.min(), y_test.min()))
     hi = float(max(y_true.max(), y_train.max(), y_test.max()))
     pad = 0.05 * (hi - lo if hi > lo else 1.0)
     return (lo - pad, hi + pad)
-
 
 for target_key in TARGETS:
     model_names = list(model_specs.keys())
@@ -1247,14 +1127,6 @@ for target_key in TARGETS:
     plt.show()
     print(f'Saved {out}')
 
-
-
-
-# In[ ]:
-
-# In[ ]:
-
-
 for target_key in TARGETS:
     subset = results_df[results_df['target_key'] == target_key]
     best_row = select_best_row(subset)
@@ -1304,11 +1176,6 @@ for target_key in TARGETS:
         f"(selected by {SELECT_BEST_BY} {BEST_MODEL_CRITERION}): {model_name} -> {out}"
     )
 
-
-
-
-# In[ ]:
-
 best_binding_row = select_best_row(results_df[results_df['target_key'] == 'binding'])
 best_solution_row = select_best_row(results_df[results_df['target_key'] == 'solution'])
 binding_model_name = best_binding_row['model']
@@ -1337,7 +1204,6 @@ def holdout_preds_by_element(pred) -> tuple[dict[str, float], dict[str, str]]:
         by_el[el] = float(yp)
         split[el] = 'test'
     return by_el, split
-
 
 es_by_el, es_split = holdout_preds_by_element(pred_s)
 eb_by_el, _ = holdout_preds_by_element(pred_b)
@@ -1433,7 +1299,7 @@ derived_energies_df = opt_work[
         'E_s_pred', 'E_b_pred', 'y_pred',
     ]
 ].rename(columns={'y_true': 'E_eff_dft', 'y_pred': 'E_eff_pred'})
-derived_energies_path = DATA_DIR / 'derived_effective_energies_opt.csv'
+derived_energies_path = DATA_DIR / f'derived_effective_energies_{RUN_TAG}.csv'
 derived_energies_df.to_csv(derived_energies_path, index=False)
 print(f'Saved energies {derived_energies_path}')
 
@@ -1444,18 +1310,9 @@ derived_metrics_df = pd.DataFrame(
         {'split': 'all_opt', 'n': len(opt_work), **derived_all_metrics},
     ]
 )
-derived_path = DATA_DIR / 'derived_solution_minus_binding_metrics.csv'
+derived_path = DATA_DIR / f'derived_solution_minus_binding_metrics_{RUN_TAG}.csv'
 derived_metrics_df.to_csv(derived_path, index=False)
 print(f'Saved metrics {derived_path}')
 display(derived_energies_df)
 display(derived_metrics_df)
-
-
-
-# In[ ]:
-
-# In[ ]:
-
-
-
 
