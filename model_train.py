@@ -6,7 +6,7 @@
 # Thermodynamic features (`mu_dopant_eV`, MP hull/selection metadata) are included when present in the datasheet — re-run `create_data.ipynb` after updating chemical potentials.
 # 
 # - **$E_{\mathrm{b}}$, $E_{\mathrm{s}}$, $E_{\mathrm{s}}-E_{\mathrm{b}}$**: same hold-out — train on pre+opt by default; **test is opt-only**. Size = 80/20 of the pre pool (`HOLDOUT_TEST_FRACTION`), or set `HOLDOUT_N_TEST` to fix it. Set `EB_OPT_ONLY` / `ES_OPT_ONLY` / `ES_MINUS_EB_OPT_ONLY` for opt-only train/test per target.
-# - **Features**: `FEATURE_IMPORTANCE_ON_TRAIN_ONLY` (True = train-split permutation importance; False = load `*_feature_importance.csv`). Cap with `TOP_N_FEATURES` / `MAX_FEATURES`.
+# - **Features**: `FEATURE_IMPORTANCE_ON_TRAIN_ONLY` (True = train-split permutation importance; False = load tagged `*_feature_importance_{pre,opt}.csv`). Cap with `TOP_N_FEATURES` / `MAX_FEATURES`.
 # - **Tuning**: `HYPERPARAM_SEARCH` = `'random'` (`N_ITER_SEARCH`) or `'grid'`. Scoring follows `BEST_MODEL_CRITERION`.
 # - **Model selection**: `SELECT_BEST_BY` = `'cv'` or `'test'`; both `cv_*` and `test_*` metrics are stored.
 # - Derived plot on `_opt`: piecewise $E_{\mathrm{eff}}$ ($E_s-E_b$ if $E_s>0$, else $-E_b$) from best $E_{\mathrm{s}}$ / $E_{\mathrm{b}}$ models.
@@ -395,14 +395,11 @@ for target_key, target_col in TARGETS.items():
             f"CV R2={cv_r2:.3f}) -> {path}"
         )
     else:
-        tagged = DATA_DIR / f'{target_key}_feature_importance_{FEATURE_IMPORTANCE_POOL}.csv'
-        legacy = DATA_DIR / f'{target_key}_feature_importance.csv'
-        path = tagged if tagged.is_file() else legacy
+        path = DATA_DIR / f'{target_key}_feature_importance_{FEATURE_IMPORTANCE_POOL}.csv'
         if not path.is_file():
             raise FileNotFoundError(
-                f'{tagged} (or legacy {legacy}) missing. Run feature_importance.ipynb '
-                f'(OPT_ONLY matching FEATURE_IMPORTANCE_POOL={FEATURE_IMPORTANCE_POOL!r}) '
-                f'or set FEATURE_IMPORTANCE_ON_TRAIN_ONLY = False.'
+                f'{path} missing. Run feature_importance.ipynb '
+                f'with OPT_ONLY matching FEATURE_IMPORTANCE_POOL={FEATURE_IMPORTANCE_POOL!r}.'
             )
         imp_df = pd.read_csv(path)
         importance_by_target[target_key] = imp_df
@@ -1185,7 +1182,6 @@ for target_key, target_col in TARGETS.items():
 results_df = pd.DataFrame(results_rows)
 results_path = DATA_DIR / f'model_train_results{METRICS_SUFFIX}.csv'
 results_df.to_csv(results_path, index=False)
-results_df.to_csv(DATA_DIR / 'model_train_results.csv', index=False)
 print(f'\nSaved summary to {results_path}')
 
 METRIC_COLS = [
@@ -1198,7 +1194,6 @@ for target_key in TARGETS:
     per_target = results_df.loc[results_df['target_key'] == target_key, METRIC_COLS].copy()
     out = DATA_DIR / f'model_metrics_{target_key}{METRICS_SUFFIX}.csv'
     per_target.to_csv(out, index=False)
-    per_target.to_csv(DATA_DIR / f'model_metrics_{target_key}.csv', index=False)
     print(f'Saved {out}')
 
 _sel_prefix = 'cv' if SELECT_BEST_BY == 'cv' else 'test'
@@ -1529,7 +1524,6 @@ derived_energies_df = opt_work[
 ].rename(columns={'y_true': 'E_eff_dft', 'y_pred': 'E_eff_pred'})
 derived_energies_path = DATA_DIR / f'derived_effective_energies{METRICS_SUFFIX}.csv'
 derived_energies_df.to_csv(derived_energies_path, index=False)
-derived_energies_df.to_csv(DATA_DIR / 'derived_effective_energies_opt.csv', index=False)
 print(f'Saved energies {derived_energies_path}')
 
 derived_metrics_df = pd.DataFrame(
@@ -1541,7 +1535,6 @@ derived_metrics_df = pd.DataFrame(
 )
 derived_path = DATA_DIR / f'derived_solution_minus_binding_metrics{METRICS_SUFFIX}.csv'
 derived_metrics_df.to_csv(derived_path, index=False)
-derived_metrics_df.to_csv(DATA_DIR / 'derived_solution_minus_binding_metrics.csv', index=False)
 print(f'Saved metrics {derived_path}')
 display(derived_energies_df)
 display(derived_metrics_df)

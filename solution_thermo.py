@@ -80,8 +80,20 @@ def calculate_chemical_potentials(
     return chemical_potentials
 
 
-def chemical_potentials_path(ml_dir: PathLike) -> Path:
-    return Path(ml_dir) / "data" / "dopant_chemical_potentials_opt.csv"
+def chemical_potentials_path(ml_dir: PathLike, pool: str = "opt") -> Path:
+    """Prefer ``chem_pots_{pool}.csv``; fall back to legacy filenames if present."""
+    data = Path(ml_dir) / "data"
+    pool = str(pool).strip().lower()
+    candidates = [
+        data / f"chem_pots_{pool}.csv",
+        data / "chem_pots_opt.csv",
+        data / "dopant_chemical_potentials_opt.csv",
+        data / "dopant_chemical_potentials.csv",
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path
+    return candidates[0]
 
 
 def load_chemical_potentials(path: PathLike) -> pd.DataFrame:
