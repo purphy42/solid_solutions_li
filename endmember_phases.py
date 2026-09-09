@@ -14,7 +14,8 @@ from mp_stable_phases import _row_from_material_id_override, mp_api_key
 
 PathLike = Union[str, Path]
 
-# Li–X supercell endmember references: {species: (mp_id_with_suffix, supercell_fraction)}.
+# Supercell endmember references (from best_candidates.ipynb), all pre/opt dopants.
+# Values: {species: (mp_id_with_suffix, supercell_fraction)}.
 OPT_DOPANT_ENDMEMBERS: dict[str, dict[str, tuple[str, float]]] = {
     "Be": {"Be": ("mp-87-GGA", 0.0078125), "Li": ("mp-135-r2SCAN", 0.9921875)},
     "B": {"LiB": ("mp-1001835-r2SCAN", 0.015625), "Li": ("mp-135-r2SCAN", 0.984375)},

@@ -1,7 +1,28 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-"""Train and tune regressors for vacancy binding, solution, and effective energies."""
+# Train and tune regression models for $E_{\mathrm{b}}$, $E_{\mathrm{s}}$, and $E_{\mathrm{s}} - E_{\mathrm{b}}$.
+# 
+# Thermodynamic features (`mu_dopant_eV`, MP hull/selection metadata) are included when present in the datasheet — re-run `create_data.ipynb` after updating chemical potentials.
+# 
+# - **$E_{\mathrm{b}}$, $E_{\mathrm{s}}$, $E_{\mathrm{s}}-E_{\mathrm{b}}$**: same hold-out — train on pre+opt by default; **test is opt-only**. Size = 80/20 of the pre pool (`HOLDOUT_TEST_FRACTION`), or set `HOLDOUT_N_TEST` to fix it. Set `EB_OPT_ONLY` / `ES_OPT_ONLY` / `ES_MINUS_EB_OPT_ONLY` for opt-only train/test per target.
+# - **Features**: `FEATURE_IMPORTANCE_ON_TRAIN_ONLY` (True = train-split permutation importance; False = load `*_feature_importance.csv`). Cap with `TOP_N_FEATURES` / `MAX_FEATURES`.
+# - **Tuning**: `HYPERPARAM_SEARCH` = `'random'` (`N_ITER_SEARCH`) or `'grid'`. Scoring follows `BEST_MODEL_CRITERION`.
+# - **Model selection**: `SELECT_BEST_BY` = `'cv'` or `'test'`; both `cv_*` and `test_*` metrics are stored.
+# - Derived plot on `_opt`: piecewise $E_{\mathrm{eff}}$ ($E_s-E_b$ if $E_s>0$, else $-E_b$) from best $E_{\mathrm{s}}$ / $E_{\mathrm{b}}$ models.
+# 
+# Plot toggles: `PLOT_SHOW_GRID` / `PLOT_SHOW_TITLES`, `PLOT_SHOW_GRID_ALL_MODELS` / `PLOT_SHOW_TITLES_ALL_MODELS`, `PLOT_SHOW_TEST_INSET`.
+# 
+
+# In[ ]:
+
+
+# Install optional gradient-boosting backends (run once per environment)
+# !pip install -q xgboost catboost
+
+
+# In[ ]:
+
 
 from pathlib import Path
 
@@ -49,17 +70,57 @@ from xgboost import XGBRegressor
 plt.rcParams.update({'figure.dpi': 120, 'font.size': 10})
 sns.set_theme(style='white')
 
+
+
+# In[ ]:
+
+
+from matplotlib import font_manager as fm
+from pathlib import Path as _Path
+for _fp in (
+    _Path('/home/a.burov/fonts/ARIAL.TTF'),
+    _Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
+    _Path('/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'),
+):
+    if _fp.is_file():
+        fm.fontManager.addfont(str(_fp))
+        break
+
+
+# In[ ]:
+
+
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
 pd.set_option('display.width', 1000)
 
+
+# In[ ]:
+
+
 np.set_printoptions(precision=5)
 
+
+# In[ ]:
+
+
+# %matplotlib inline
 plt.rcParams['figure.dpi'] = 450
 
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+# Resolve ml_part/data even if kernel cwd is the repo root.
 _candidates = []
 try:
-    _candidates.append(Path(__vsc_ipynb_file__).resolve().parent)
+    _candidates.append(Path(__vsc_ipynb_file__).resolve().parent)  # VS Code / Cursor
 except Exception:
     pass
 _candidates.extend([Path.cwd().resolve(), Path.cwd().resolve() / 'ml_part'])
@@ -68,6 +129,8 @@ if not (ML_DIR / 'data' / 'vac_solution_energy_opt.csv').is_file() and (ML_DIR /
     ML_DIR = ML_DIR / 'ml_part'
 REPO_ROOT = ML_DIR.parent if ML_DIR.name == 'ml_part' else ML_DIR
 DATA_DIR = ML_DIR / 'data'
+FIGURES_DIR = ML_DIR / 'figures'
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 print(f'ML_DIR={ML_DIR}')
 print(f'DATA_DIR={DATA_DIR}')
 
@@ -78,18 +141,17 @@ print(f'opt merge: {len(merged_opt)} rows (reference _opt set)')
 
 RANDOM_STATE = 42
 OPT_HOLDOUT_TARGETS = {'binding', 'solution', 'solution_minus_binding'}
+# Hold-out: test is always drawn from _opt only; train = remaining opt + all pre-only.
+# Default: 80/20 of the full pre pool (n_test = round(n_pre * fraction), capped so ≥1 opt stays in train).
 HOLDOUT_TEST_FRACTION = 0.2
-HOLDOUT_N_TEST = None
+# Optional override of the 80/20 size. None → use HOLDOUT_TEST_FRACTION; e.g. 11 → fixed test size.
+HOLDOUT_N_TEST = None  # → n_test=10 with 50-pre pool (opt-only: 9 train / 10 test)
+# If True: that target is trained/tested on _opt only (same opt split; no pre-only rows).
+# Default False: pre-train / opt-test (more train data; recommended).
 EB_OPT_ONLY = True
 ES_OPT_ONLY = True
 ES_MINUS_EB_OPT_ONLY = True
 
-RUN_OPT_ONLY = EB_OPT_ONLY and ES_OPT_ONLY and ES_MINUS_EB_OPT_ONLY
-RUN_TAG = 'opt' if RUN_OPT_ONLY else 'pre'
-FIGURES_DIR = ML_DIR / 'figures' / ('ml_opt_trained' if RUN_OPT_ONLY else 'ml_pre_trained')
-FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-print(f'RUN_TAG={RUN_TAG}')
-print(f'FIGURES_DIR={FIGURES_DIR}')
 
 def use_opt_only_for(target_key: str) -> bool:
     return {
@@ -110,7 +172,7 @@ opt_elements = set(merged_opt['element'].astype(str))
 merged_opt_holdout_train = merged_holdout_train[
     merged_holdout_train['element'].astype(str).isin(opt_elements)
 ].copy()
-merged_opt_holdout_test = merged_holdout_test.copy()
+merged_opt_holdout_test = merged_holdout_test.copy()  # already opt-only
 
 TARGETS = {
     'binding': 'vac_binding_energy_eV',
@@ -164,22 +226,47 @@ print(
 print(f'hold-out train dopants: {sorted(merged_holdout_train["element"].astype(str).tolist())}')
 print(f'hold-out test dopants (opt-only): {sorted(merged_holdout_test["element"].astype(str).tolist())}')
 
-FEATURE_IMPORTANCE_ON_TRAIN_ONLY = False
+
+
+# In[ ]:
+
+
+# Feature selection.
+# True  → permutation importance on the train split only (no test leakage).
+# False → load DATA_DIR / '{target}_feature_importance[_opt|_pre].csv' from feature_importance.ipynb.
+FEATURE_IMPORTANCE_ON_TRAIN_ONLY = False  # best: load CSV, do not recompute on n≈9
+# Used only when FEATURE_IMPORTANCE_ON_TRAIN_ONLY is False (must match feature_importance.ipynb OPT_ONLY).
 FEATURE_IMPORTANCE_POOL = 'opt'  # 'opt' | 'pre' | 'train'
 IMPORTANCE_THRESHOLD = 1e-3
 REQUIRE_PERM_GT_STD = True
 MIN_FEATURES = 5
 MAX_FEATURES = 50
-TOP_N_FEATURES = 25
+TOP_N_FEATURES = 25  # None = all significant up to MAX_FEATURES
 CORR_DEDUP_THRESHOLD = 0.99
 PERM_N_ESTIMATORS = 500
 PERM_N_REPEATS = 25
+
+
+def metrics_pool_tag() -> str:
+    """Suffix for metric CSVs: '_opt' / '_pre' (same idea as feature_importance tags)."""
+    if FEATURE_IMPORTANCE_POOL in {'opt', 'pre'}:
+        return FEATURE_IMPORTANCE_POOL
+    if EB_OPT_ONLY and ES_OPT_ONLY and ES_MINUS_EB_OPT_ONLY:
+        return 'opt'
+    return 'pre'
+
+
+METRICS_POOL_TAG = metrics_pool_tag()
+METRICS_SUFFIX = f'_{METRICS_POOL_TAG}'
+print(f'Metrics outputs tagged: *{METRICS_SUFFIX}.csv')
+
 
 def mark_significant(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     if 'significant' not in out.columns:
         out['significant'] = out['importance_perm_mean'] > out['importance_perm_std']
     return out
+
 
 def select_significant_features(
     importance_df: pd.DataFrame,
@@ -214,6 +301,7 @@ def select_significant_features(
     cap = top_n if top_n is not None and top_n > 0 else MAX_FEATURES
     return feats[:cap], n_significant
 
+
 def usable_feature_cols(X: pd.DataFrame, cols: list[str]) -> list[str]:
     usable = []
     for col in cols:
@@ -222,6 +310,7 @@ def usable_feature_cols(X: pd.DataFrame, cols: list[str]) -> list[str]:
         if pd.to_numeric(X[col], errors='coerce').notna().any():
             usable.append(col)
     return usable
+
 
 def compute_feature_importance_train(
     X: pd.DataFrame,
@@ -266,10 +355,12 @@ def compute_feature_importance_train(
     df = mark_significant(df).sort_values('importance_perm_mean', ascending=False).reset_index(drop=True)
     return df, cv_r2
 
+
 def train_frame_for_target(target_key: str) -> pd.DataFrame:
     if target_key in OPT_HOLDOUT_TARGETS:
         return merged_opt_holdout_train if use_opt_only_for(target_key) else merged_holdout_train
     return merged_opt
+
 
 features_by_target = {}
 importance_by_target = {}
@@ -305,14 +396,13 @@ for target_key, target_col in TARGETS.items():
         )
     else:
         tagged = DATA_DIR / f'{target_key}_feature_importance_{FEATURE_IMPORTANCE_POOL}.csv'
-        path = tagged
-        if not path.is_file():
-            untagged = DATA_DIR / f'{target_key}_feature_importance.csv'
-            path = untagged if untagged.is_file() else tagged
+        legacy = DATA_DIR / f'{target_key}_feature_importance.csv'
+        path = tagged if tagged.is_file() else legacy
         if not path.is_file():
             raise FileNotFoundError(
-                f'{tagged} missing. Run feature_importance.ipynb '
-                f'with OPT_ONLY matching FEATURE_IMPORTANCE_POOL={FEATURE_IMPORTANCE_POOL!r}.'
+                f'{tagged} (or legacy {legacy}) missing. Run feature_importance.ipynb '
+                f'(OPT_ONLY matching FEATURE_IMPORTANCE_POOL={FEATURE_IMPORTANCE_POOL!r}) '
+                f'or set FEATURE_IMPORTANCE_ON_TRAIN_ONLY = False.'
             )
         imp_df = pd.read_csv(path)
         importance_by_target[target_key] = imp_df
@@ -324,13 +414,45 @@ for target_key, target_col in TARGETS.items():
             f"importance rows={len(imp_df)}) <- {path}"
         )
 
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+
+
+
+# ## Regularization and model selection
+# 
+# All models use median imputation + `StandardScaler`. Set `HYPERPARAM_SEARCH` (`'random'` / `'grid'`), `SELECT_BEST_BY` (`'cv'` / `'test'`), and `BEST_MODEL_CRITERION`. Both train-CV and holdout metrics are stored.
+# 
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
 RANDOM_STATE = 42
-N_SPLITS = 5
+N_SPLITS = 3  # better fold size for n≈9–19 than 5
 CV = KFold(n_splits=N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
 
-BEST_MODEL_CRITERION = 'RMSE'  # RMSE | MAE | R2 | MaxAE
+# Best-model metric: RMSE | MAE | R2 | MaxAE.
+BEST_MODEL_CRITERION = 'RMSE'
+# Select winner by train CV ('cv') or holdout test ('test').
 SELECT_BEST_BY = 'cv'  # 'cv' | 'test'
+# Hyperparameter search: 'random' (RandomizedSearchCV) or 'grid' (GridSearchCV).
 HYPERPARAM_SEARCH = 'random'  # 'random' | 'grid'
+# Used only when HYPERPARAM_SEARCH == 'random' (capped by each model's grid size).
 N_ITER_SEARCH = 40
 
 if SELECT_BEST_BY not in {'cv', 'test'}:
@@ -345,13 +467,17 @@ SEARCH_SCORING = {
     'R2': 'r2',
 }
 
+# Regularization grid: keep mild–moderate strength, but do NOT include alphas that
+# force a null (mean) predictor (e.g. Ridge alpha=1e5 → train R²≈0).
 ALPHAS = np.logspace(-3, 2, 16).tolist()
 L1_RATIOS = np.round(np.linspace(0.05, 0.95, 10), 3).tolist()
+# Lasso / ElasticNet: weak alpha + many features can need more iterations.
 LINEAR_MAX_ITER = 100_000
 LINEAR_TOL = 1e-3
-SVR_C = np.logspace(-2, 1, 10).tolist()
+SVR_C = np.logspace(-2, 1, 10).tolist()  # cap C; large C memorizes tiny n
 SVR_GAMMA = ['scale', 'auto'] + np.logspace(-4, 0, 6).tolist()
 SVR_EPSILON = np.logspace(-3, -1, 6).tolist()
+
 
 def svr_param_grid() -> list[dict]:
     """Kernel-specific grids (avoid invalid Cartesian products)."""
@@ -377,6 +503,7 @@ def svr_param_grid() -> list[dict]:
         },
     ]
 
+
 def _grid_size(param_grid) -> int:
     if isinstance(param_grid, list):
         return sum(_grid_size(pg) for pg in param_grid)
@@ -384,6 +511,7 @@ def _grid_size(param_grid) -> int:
     for values in param_grid.values():
         size *= len(values)
     return size
+
 
 def build_model_specs():
     specs = {
@@ -477,8 +605,8 @@ def build_model_specs():
                     random_state=RANDOM_STATE,
                     verbose=0,
                     allow_writing_files=False,
-                    thread_count=1,
-                    bootstrap_type='Bernoulli',
+                    thread_count=1,  # search uses n_jobs=-1; avoid thread oversubscription
+                    bootstrap_type='Bernoulli',  # required when tuning subsample (< 1)
                 )),
             ]),
             'param_grid': {
@@ -495,6 +623,7 @@ def build_model_specs():
         spec['n_grid'] = _grid_size(spec['param_grid'])
     return specs
 
+
 def compute_metrics(y_true, y_pred) -> dict[str, float]:
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
@@ -505,6 +634,7 @@ def compute_metrics(y_true, y_pred) -> dict[str, float]:
         'RMSE': float(np.sqrt(mean_squared_error(y_true, y_pred))),
     }
 
+
 def effective_es_minus_eb(e_s, e_b) -> float:
     """Piecewise E_eff used in best_candidates: E_s - E_b if E_s > 0, else -E_b."""
     e_s = float(e_s)
@@ -513,6 +643,7 @@ def effective_es_minus_eb(e_s, e_b) -> float:
         return e_s - e_b
     return -e_b
 
+
 def metrics_from_results_row(row: pd.Series, split: str) -> dict[str, float]:
     return {
         'R2': float(row[f'{split}_R2']),
@@ -520,6 +651,7 @@ def metrics_from_results_row(row: pd.Series, split: str) -> dict[str, float]:
         'MAE': float(row[f'{split}_MAE']),
         'RMSE': float(row[f'{split}_RMSE']),
     }
+
 
 def select_best_row(
     subset: pd.DataFrame,
@@ -538,12 +670,15 @@ def select_best_row(
         return subset.loc[subset[col].idxmax()]
     return subset.loc[subset[col].idxmin()]
 
+
+
 SCORERS = {
     'R2': 'r2',
     'neg_MaxAE': 'neg_max_error',
     'neg_MAE': 'neg_mean_absolute_error',
     'neg_RMSE': 'neg_root_mean_squared_error',
 }
+
 
 def cv_metrics_from_scores(scores: dict) -> dict[str, float]:
     return {
@@ -553,35 +688,41 @@ def cv_metrics_from_scores(scores: dict) -> dict[str, float]:
         'RMSE': float(-np.mean(scores['test_neg_RMSE'])),
     }
 
+
 EV_TO_MEV = 1000
-PLOT_SHOW_GRID = False
-PLOT_SHOW_TITLES = False
-PLOT_SHOW_GRID_ALL_MODELS = True
-PLOT_SHOW_TITLES_ALL_MODELS = True
-PLOT_SHOW_TEST_INSET = False
-PLOT_TEST_INSET_TARGETS = ('solution', 'solution_minus_binding')
-PLOT_INSET_PAD = 0.15
+PLOT_SHOW_GRID = False  # best-model / derived / inset grids
+PLOT_SHOW_TITLES = False  # best-model / derived titles
+PLOT_SHOW_GRID_ALL_MODELS = True  # pred_vs_actual_*_all_models.pdf only
+PLOT_SHOW_TITLES_ALL_MODELS = True  # pred_vs_actual_*_all_models.pdf only
+PLOT_SHOW_TEST_INSET = False  # zoom inset on test region for E_s / E_s-E_b
+PLOT_TEST_INSET_TARGETS = ('solution', 'solution_minus_binding')  # inset only for E_s best-model plot
+PLOT_INSET_PAD = 0.15  # padding as fraction of test-range span
+# Inset box in parent-axes coordinates: (x0, y0, width, height).
+# Increase x0 → right; increase y0 → higher.
 PLOT_INSET_BOUNDS = (0.11, 0.58, 0.40, 0.40)
-PLOT_INSET_TICK_FONTSIZE = 9
+PLOT_INSET_TICK_FONTSIZE = 9  # inset tick labels
 PLOT_SPINE_COLOR = 'black'
 PLOT_TRAIN_COLOR = 'darkblue'
 PLOT_TEST_COLOR = 'crimson'
 PLOT_LEGEND_FONTSIZE = 12
 PLOT_ANNOTATION_FONTSIZE = 12
-PLOT_LABEL_FONTSIZE = 16
+PLOT_LABEL_FONTSIZE = 16  # x/y axis label fontsize
 PLOT_LEGEND_EDGECOLOR = 'black'
 TICK_LENGTH = 6
 TICK_WIDTH = 1.0
 
-sns.set_theme(style='white')
+sns.set_theme(style='white')  # grid is applied explicitly per axes
+
 
 def rmse_to_meV(rmse_ev: float) -> float:
     return float(rmse_ev) * EV_TO_MEV
+
 
 def format_metric_for_plot(metric: str, value: float) -> str:
     if metric == 'R2':
         return f'{value:.4f}'
     return f'{value * EV_TO_MEV:.1f} meV'
+
 
 def annotate_train_test_metric(
     ax,
@@ -603,6 +744,7 @@ def annotate_train_test_metric(
         zorder=5,
     )
 
+
 def will_show_test_inset(target_key: str | None = None) -> bool:
     if not PLOT_SHOW_TEST_INSET:
         return False
@@ -610,27 +752,31 @@ def will_show_test_inset(target_key: str | None = None) -> bool:
         return False
     return target_key in PLOT_TEST_INSET_TARGETS
 
+
 def apply_axes_grid(ax, show_grid: bool) -> None:
     """Apply grid consistently on main axes and insets."""
     ax.grid(bool(show_grid), which='major', axis='both')
     ax.set_axisbelow(True)
+
 
 def add_train_test_legend(ax, *, loc: str = 'upper left') -> None:
     leg = ax.legend(
         loc=loc,
         fontsize=PLOT_LEGEND_FONTSIZE,
         framealpha=0.9,
-        borderpad=0.25,
-        labelspacing=0.35,
-        handletextpad=0.5,
-        borderaxespad=0.4,
+        borderpad=0.25,       # space between content and frame
+        labelspacing=0.35,    # vertical gap between entries
+        handletextpad=0.5,    # gap between marker and text
+        borderaxespad=0.4,    # gap between legend and axes edge
         edgecolor=PLOT_LEGEND_EDGECOLOR,
         fancybox=True,
     )
     frame = leg.get_frame()
     frame.set_edgecolor(PLOT_LEGEND_EDGECOLOR)
     frame.set_linewidth(1.0)
+    # Keep corners rounded without inflating the frame around the text.
     frame.set_boxstyle('round', pad=0.1, rounding_size=0.4)
+
 
 def style_parity_axes(
     ax,
@@ -649,6 +795,7 @@ def style_parity_axes(
         with_inset = will_show_test_inset(target_key)
     legend_loc = 'center right' if with_inset else 'upper left'
     add_train_test_legend(ax, loc=legend_loc)
+    # seaborn themes set xtick.bottom/ytick.left to False (labels only); re-enable tick marks.
     ax.tick_params(
         axis='both',
         which='major',
@@ -670,6 +817,7 @@ def style_parity_axes(
     for spine in ax.spines.values():
         spine.set_color(PLOT_SPINE_COLOR)
         spine.set_linewidth(1.0)
+
 
 def scatter_train_test(ax, y_train_pred, y_train_true, y_test_pred, y_test_true, *, s=55) -> None:
     ax.scatter(
@@ -695,6 +843,7 @@ def scatter_train_test(ax, y_train_pred, y_train_true, y_test_pred, y_test_true,
         zorder=4,
     )
 
+
 def _test_zoom_limits(y_test_pred, y_test_true, *, pad_frac: float = PLOT_INSET_PAD):
     x = np.asarray(y_test_pred, dtype=float)
     y = np.asarray(y_test_true, dtype=float)
@@ -703,6 +852,7 @@ def _test_zoom_limits(y_test_pred, y_test_true, *, pad_frac: float = PLOT_INSET_
     span = hi - lo if hi > lo else 1.0
     pad = pad_frac * span
     return (lo - pad, hi + pad)
+
 
 def add_test_region_inset(
     ax,
@@ -757,9 +907,21 @@ def add_test_region_inset(
     _rect, conn1, conn2 = mark_inset(
         ax, axins, loc1=2, loc2=4, fc='none', ec='0.35', lw=0.8,
     )
+    # Zoom rectangle stays solid; connector lines are dashed.
     conn1.set_linestyle('--')
     conn2.set_linestyle('--')
     return axins
+
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
 
 model_specs = build_model_specs()
 print('Grid sizes (combinations per model):')
@@ -767,8 +929,10 @@ for name, spec in model_specs.items():
     print(f'  {name:18} {spec["n_grid"]:4d}')
 print(f'  total per target   {sum(s["n_grid"] for s in model_specs.values())}')
 
+
 def features_in_df(df: pd.DataFrame, feature_cols: list[str]) -> list[str]:
     return [f for f in feature_cols if f in df.columns]
+
 
 def get_xy(df: pd.DataFrame, target_col: str, feature_cols: list[str]):
     if df.empty:
@@ -789,6 +953,7 @@ def get_xy(df: pd.DataFrame, target_col: str, feature_cols: list[str]):
     elements = work['element'].astype(str).values
     return X, y, elements
 
+
 def cv_for_n(n_samples: int, *, max_splits: int = N_SPLITS) -> KFold:
     if n_samples < 2:
         raise ValueError(
@@ -798,18 +963,22 @@ def cv_for_n(n_samples: int, *, max_splits: int = N_SPLITS) -> KFold:
     n_splits = min(max_splits, n_samples)
     return KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE)
 
+
 def catboost_subsample_grid(n_train: int, n_splits: int) -> list[float]:
     """Bernoulli subsample needs enough units in each CV training fold."""
     n_fold_train = max(1, int(np.floor(n_train * (n_splits - 1) / n_splits)))
     candidates = [0.5, 0.6, 0.8, 1.0]
+    # CatBoost raises if subsample * n_fold_train is too small (~<5).
     safe = [s for s in candidates if s * n_fold_train >= 5]
     return safe if safe else [1.0]
+
 
 def _clip_leaf_grid(values, *, n_train: int) -> list:
     """Keep leaf sizes that still allow splits on small training sets."""
     max_leaf = max(1, n_train // 4)
     clipped = [int(v) for v in values if int(v) <= max_leaf]
     return clipped if clipped else [1]
+
 
 def param_grid_for_model(model_name: str, param_grid, *, n_train: int, n_splits: int):
     grid = param_grid
@@ -828,6 +997,7 @@ def param_grid_for_model(model_name: str, param_grid, *, n_train: int, n_splits:
     if leaf_key and isinstance(grid, dict) and leaf_key in grid:
         grid = {**grid, leaf_key: _clip_leaf_grid(grid[leaf_key], n_train=n_train)}
     return grid
+
 
 def pack_predictions(*, holdout: bool, y_train, y_train_pred, y_test, y_test_pred, train_elements, test_elements):
     if holdout:
@@ -848,7 +1018,9 @@ def pack_predictions(*, holdout: bool, y_train, y_train_pred, y_test, y_test_pre
         'elements': train_elements,
     }
 
+
 results_rows = []
+
 
 best_models = {}
 predictions = {}
@@ -932,6 +1104,7 @@ for target_key, target_col in TARGETS.items():
         y_train_pred = best_est.predict(X_train)
         train_metrics = compute_metrics(y_train, y_train_pred)
 
+        # Train-CV metrics (used when SELECT_BEST_BY == 'cv').
         cv_scores = cross_validate(
             clone(best_est), X_train, y_train, cv=target_cv, scoring=SCORERS,
             n_jobs=-1,
@@ -1008,9 +1181,11 @@ for target_key, target_col in TARGETS.items():
             f"MAE={test_metrics['MAE']:.4f}, RMSE={rmse_to_meV(test_metrics['RMSE']):.1f} meV"
         )
 
+
 results_df = pd.DataFrame(results_rows)
-results_path = DATA_DIR / f'model_train_results_{RUN_TAG}.csv'
+results_path = DATA_DIR / f'model_train_results{METRICS_SUFFIX}.csv'
 results_df.to_csv(results_path, index=False)
+results_df.to_csv(DATA_DIR / 'model_train_results.csv', index=False)
 print(f'\nSaved summary to {results_path}')
 
 METRIC_COLS = [
@@ -1021,8 +1196,9 @@ METRIC_COLS = [
 ]
 for target_key in TARGETS:
     per_target = results_df.loc[results_df['target_key'] == target_key, METRIC_COLS].copy()
-    out = DATA_DIR / f'model_metrics_{target_key}_{RUN_TAG}.csv'
+    out = DATA_DIR / f'model_metrics_{target_key}{METRICS_SUFFIX}.csv'
     per_target.to_csv(out, index=False)
+    per_target.to_csv(DATA_DIR / f'model_metrics_{target_key}.csv', index=False)
     print(f'Saved {out}')
 
 _sel_prefix = 'cv' if SELECT_BEST_BY == 'cv' else 'test'
@@ -1039,6 +1215,27 @@ for target_key in TARGETS:
         f"test_{BEST_MODEL_CRITERION}={best[f'test_{BEST_MODEL_CRITERION}']:.4f})"
     )
 
+
+
+# In[ ]:
+
+
+
+
+
+# In[11]:
+
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
 summary_df = results_df.copy()
 summary_df['train_RMSE_meV'] = summary_df['train_RMSE'].map(rmse_to_meV)
 summary_df['cv_RMSE_meV'] = summary_df['cv_RMSE'].map(rmse_to_meV)
@@ -1050,12 +1247,20 @@ display_cols = [
     'test_R2', 'test_MaxAE', 'test_MAE', 'test_RMSE_meV',
 ]
 _sort_col = f"{'cv' if SELECT_BEST_BY == 'cv' else 'test'}_{BEST_MODEL_CRITERION}"
+# Sort on full summary_df (has cv_RMSE / test_RMSE), then show display columns.
 display(
     summary_df.sort_values(
         ['target_label', _sort_col],
         ascending=[True, BEST_MODEL_CRITERION != 'R2'],
     )[display_cols]
 )
+
+
+# In[12]:
+
+
+# In[ ]:
+
 
 print('Best parameters per target and model:\n')
 for target_key in TARGETS:
@@ -1068,11 +1273,16 @@ for target_key in TARGETS:
         print(f"  {model_name}: {tuned}")
     print()
 
+
+# In[ ]:
+
+
 def _scatter_limits(y_true, y_train, y_test):
     lo = float(min(y_true.min(), y_train.min(), y_test.min()))
     hi = float(max(y_true.max(), y_train.max(), y_test.max()))
     pad = 0.05 * (hi - lo if hi > lo else 1.0)
     return (lo - pad, hi + pad)
+
 
 for target_key in TARGETS:
     model_names = list(model_specs.keys())
@@ -1127,6 +1337,17 @@ for target_key in TARGETS:
     plt.show()
     print(f'Saved {out}')
 
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
 for target_key in TARGETS:
     subset = results_df[results_df['target_key'] == target_key]
     best_row = select_best_row(subset)
@@ -1176,6 +1397,12 @@ for target_key in TARGETS:
         f"(selected by {SELECT_BEST_BY} {BEST_MODEL_CRITERION}): {model_name} -> {out}"
     )
 
+
+
+# In[ ]:
+
+
+# Derived E_eff on _opt from best E_s / E_b models (piecewise: E_s-E_b if E_s>0 else -E_b).
 best_binding_row = select_best_row(results_df[results_df['target_key'] == 'binding'])
 best_solution_row = select_best_row(results_df[results_df['target_key'] == 'solution'])
 binding_model_name = best_binding_row['model']
@@ -1204,6 +1431,7 @@ def holdout_preds_by_element(pred) -> tuple[dict[str, float], dict[str, str]]:
         by_el[el] = float(yp)
         split[el] = 'test'
     return by_el, split
+
 
 es_by_el, es_split = holdout_preds_by_element(pred_s)
 eb_by_el, _ = holdout_preds_by_element(pred_b)
@@ -1299,8 +1527,9 @@ derived_energies_df = opt_work[
         'E_s_pred', 'E_b_pred', 'y_pred',
     ]
 ].rename(columns={'y_true': 'E_eff_dft', 'y_pred': 'E_eff_pred'})
-derived_energies_path = DATA_DIR / f'derived_effective_energies_{RUN_TAG}.csv'
+derived_energies_path = DATA_DIR / f'derived_effective_energies{METRICS_SUFFIX}.csv'
 derived_energies_df.to_csv(derived_energies_path, index=False)
+derived_energies_df.to_csv(DATA_DIR / 'derived_effective_energies_opt.csv', index=False)
 print(f'Saved energies {derived_energies_path}')
 
 derived_metrics_df = pd.DataFrame(
@@ -1310,9 +1539,22 @@ derived_metrics_df = pd.DataFrame(
         {'split': 'all_opt', 'n': len(opt_work), **derived_all_metrics},
     ]
 )
-derived_path = DATA_DIR / f'derived_solution_minus_binding_metrics_{RUN_TAG}.csv'
+derived_path = DATA_DIR / f'derived_solution_minus_binding_metrics{METRICS_SUFFIX}.csv'
 derived_metrics_df.to_csv(derived_path, index=False)
+derived_metrics_df.to_csv(DATA_DIR / 'derived_solution_minus_binding_metrics.csv', index=False)
 print(f'Saved metrics {derived_path}')
 display(derived_energies_df)
 display(derived_metrics_df)
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+
 

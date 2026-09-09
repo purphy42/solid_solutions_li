@@ -1,4 +1,8 @@
-"""Pinned feature list for solution-energy (E_s) models."""
+"""Pinned E_s feature list that recovers SVR ~15/94 meV (opt-only 9/10 holdout).
+
+Do not replace this with the current cluster feature_importance_*_opt/train.csv
+selection (~28–38 features → SVR ~120/134 meV).
+"""
 
 from __future__ import annotations
 
@@ -63,6 +67,7 @@ def resolve_solution_features(available_columns, *, min_features: int = 40) -> l
     if len(pinned) < min_features:
         raise RuntimeError(
             f'E_s feature pin failed: only {len(pinned)}/{len(SOLUTION_FEATURES_BEST)} '
-            f'features found in datasheet (need >= {min_features}).'
+            f'features found in datasheet (need >= {min_features}). '
+            f'Check matminer/endmember merge and that you load energy_pool="opt" columns.'
         )
     return pinned

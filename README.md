@@ -38,8 +38,15 @@ Importance tables, metrics, and ML figures are tagged `_pre` / `_opt` the same w
 
 Hold-out options in model training:
 
-- **Opt-only** (current defaults: all `*_OPT_ONLY=True`): train and test on the `_opt` split only.
+- **Opt-only** (current defaults: all `*_OPT_ONLY=True`): train and test on the `_opt` split only (**9 train / 10 test**).
 - **Pre-train / opt-test**: train on `_pre` + remaining `_opt`, test on `_opt` only.
+
+Current training defaults (see `model_train.py` / [`data/model_train_results.csv`](data/model_train_results.csv)):
+
+- Hyperparameter search: **randomized** (`HYPERPARAM_SEARCH='random'`)
+- Model selection: minimal **cross-validation** RMSE (`SELECT_BEST_BY='cv'`)
+- Features: significance + correlation filtering, capped at 25 → **17** features per target in the latest run
+- CV-best models (opt-only hold-out): **CatBoost** (\(E_s\)), **Ridge** (\(E_b\)), **SVR** (direct \(E_{\mathrm{eff}}\)); derived piecewise \(E_{\mathrm{eff}}\) from the best \(E_s\)/\(E_b\) models outperforms direct prediction
 
 ## Hume-Rothery rules
 

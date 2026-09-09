@@ -17,17 +17,6 @@ _UNARY_MATMINER_META = {"element", "material_id", "role", "endmember_formula"}
 _ENDMEMBER_MATMINER_META = {"element", "endmember_material_id", "role", "endmember_formula"}
 
 
-def resolve_data_dir(repo_root: PathLike) -> Path:
-    """Return the directory that contains ``data/`` (flat layout or legacy ``ml_part``)."""
-    root = Path(repo_root)
-    if (root / "data").is_dir():
-        return root
-    ml_part = root / "ml_part"
-    if (ml_part / "data").is_dir():
-        return ml_part
-    return root
-
-
 def _read_energy_csv(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
     if "Dopant" in df.columns:
@@ -63,13 +52,12 @@ def build_datasheet(
     """Merge vacancy energies with MP phase, thermo, and endmember metadata.
 
     ``energy_pool``:
-    - ``"pre"``: full dopant set (all available DFT vacancy energies)
-    - ``"opt"`` (default): lattice-optimized set with 2NN neighbour positions
-      for solute–vacancy binding
+    - ``"opt"`` (default): optimized binding + solution CSVs (~19 dopants)
+    - ``"pre"``: pre-optimized CSVs (~50 dopants)
     """
     repo_root = Path(repo_root)
-    ml_dir = resolve_data_dir(repo_root)
-    data_dir = ml_dir / "data"
+    data_dir = repo_root / "data"
+    ml_dir = repo_root / "ml_part"
 
     if energy_pool == "opt":
         bind_name = binding_energy_file or "vac_binding_energy_opt.csv"
@@ -85,7 +73,7 @@ def build_datasheet(
     df = bind.merge(sol, on="element", how="inner", validate="one_to_one")
 
     if mp_phases_path is None:
-        mp_phases_path = data_dir / "dopant_stable_experimental_phases_mp.csv"
+        mp_phases_path = ml_dir / "data" / "dopant_stable_experimental_phases_mp.csv"
     phases = pd.read_csv(mp_phases_path)
     phases["element"] = phases["element"].astype(str).str.strip()
     phases = phases[phases["role"] == "dopant"].drop(columns=["role"])
@@ -100,7 +88,8 @@ def build_datasheet(
         props = elemental_props_df.copy()
     else:
         if elemental_props_path is None:
-            elemental_props_path = data_dir / "elemental_props_vs_li.csv"
+            # Hume–Rothery-style deltas vs Li from create_data.ipynb
+            elemental_props_path = ml_dir / "data" / "elemental_props_vs_li.csv"
         props = (
             pd.read_csv(elemental_props_path)
             if Path(elemental_props_path).is_file()
@@ -109,6 +98,7 @@ def build_datasheet(
 
     if props is not None:
         props["element"] = props["element"].astype(str).str.strip()
+        # Keep only identity + delta_* ML features (drop raw valency/chi if present).
         keep = ["element", *ELEMENTAL_FEATURE_COLS]
         keep = [c for c in keep if c in props.columns]
         props = props[keep]
@@ -122,8 +112,8 @@ def build_datasheet(
 def load_structure_matminer_tables(
     ml_dir: PathLike,
 ) -> tuple[pd.DataFrame, Optional[pd.DataFrame]]:
-    """Load unary and endmember matminer feature tables from ``data/``."""
-    ml_dir = resolve_data_dir(ml_dir)
+    """Load unary and endmember matminer feature tables from ``ml_part/data``."""
+    ml_dir = Path(ml_dir)
     data_dir = ml_dir / "data"
 
     matminer_df = pd.read_csv(data_dir / "structure_matminer_features.csv")
@@ -173,7 +163,7 @@ def load_ml_frame(
     """Build the datasheet and optionally attach matminer structure features."""
     df = build_datasheet(repo_root, energy_pool=energy_pool)
     if attach_matminer:
-        df = merge_structure_matminer(df, resolve_data_dir(repo_root), verbose=verbose)
+        df = merge_structure_matminer(df, Path(repo_root) / "ml_part", verbose=verbose)
     return df
 
 
@@ -194,13 +184,19 @@ def split_pre_train_opt_test(
     prefer_opt_energies: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Hold-out on the full ``_pre`` dopant pool with an ``_opt``-only test set.
+    Hold-out on the full dopant pool with an **opt-only** test set.
 
-    - Pool: all ``_pre`` dopants (``full_df``).
-    - Test: drawn only from lattice-optimized ``_opt`` dopants (``opt_df``).
-    - Train: remaining opt dopants plus all pre-only dopants.
+    Concept:
+    - Use all pre-optimized dopants as the pool (``full_df``).
+    - Draw the test set **only** from optimized dopants (``opt_df``).
+    - Train = remaining opt dopants + all non-opt pre dopants.
 
-    When ``prefer_opt_energies`` is True, shared opt dopants use energies from ``opt_df``.
+    Test size defaults to ``round(len(full_df) * test_fraction)`` (capped so at least
+    one opt dopant remains in train). With 50 pre / 19 opt and ``n_test=11``:
+    test = 11 opt, train = 8 opt + 31 pre-only = 39.
+
+    When ``prefer_opt_energies`` is True, opt dopants in both splits use energy /
+    target columns from ``opt_df`` (pre rows supply features / non-opt energies).
     """
     from sklearn.model_selection import train_test_split
 
@@ -432,9 +428,15 @@ def save_datasheet(
     *,
     basename: str = "datasheet",
 ) -> Path:
-    """Write ``datasheet.csv`` under ``out_dir``."""
+    """Write ``datasheet.csv`` and remove legacy train/test exports."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
     path = out_dir / f"{basename}.csv"
     df.to_csv(path, index=False)
+
+    for legacy in (out_dir / f"{basename}_train.csv", out_dir / f"{basename}_test.csv"):
+        if legacy.is_file():
+            legacy.unlink()
+
     return path

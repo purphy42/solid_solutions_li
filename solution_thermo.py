@@ -10,6 +10,7 @@ from pymatgen.core import Composition
 
 PathLike = Union[str, Path]
 
+# Used by feature_importance.ipynb and model_train.ipynb (via importance CSVs).
 SOLUTION_THERMO_FEATURE_COLS = [
     "mu_dopant_eV",
     "mu_dopant_delta_vs_elemental_eV",
@@ -80,13 +81,7 @@ def calculate_chemical_potentials(
 
 
 def chemical_potentials_path(ml_dir: PathLike) -> Path:
-    """Resolve chemical-potential CSV (``chem_pots_opt.csv`` or legacy name)."""
-    data_dir = Path(ml_dir) / "data"
-    for name in ("chem_pots_opt.csv", "dopant_chemical_potentials_opt.csv"):
-        path = data_dir / name
-        if path.is_file():
-            return path
-    return data_dir / "chem_pots_opt.csv"
+    return Path(ml_dir) / "data" / "dopant_chemical_potentials_opt.csv"
 
 
 def load_chemical_potentials(path: PathLike) -> pd.DataFrame:
@@ -106,8 +101,7 @@ def load_chemical_potentials(path: PathLike) -> pd.DataFrame:
 def _as_bool_int(series: pd.Series) -> pd.Series:
     if series.dtype == bool:
         return series.astype(int)
-    filled = series.where(series.notna(), False)
-    return filled.astype(bool).astype(int)
+    return series.fillna(False).astype(bool).astype(int)
 
 
 def add_solution_thermo_features(
